@@ -113,12 +113,16 @@ CONFIG_SAMPLE = (
 
 
 def print_config_sample(cfg):
-    print("\n  → Them khoi nay vao %s:" % cfg)
+    print("\n  → Them khoi nay vao %s (mac dinh OpenRouter):" % cfg)
     for line in CONFIG_SAMPLE.splitlines():
         print("      %s" % line)
     print("  → Roi dat API key — TU chay trong terminal, DUNG dan vao chat agent")
     print("    (key se nam lai trong transcript/state.db va bi FTS index):")
     print("      hermes config set OPENROUTER_API_KEY sk-or-v1-...")
+    print("  → Hoac di provider truc tiep (moi cai mot key rieng):")
+    print("      provider: openai  model: gpt-image-1             key: OPENAI_API_KEY")
+    print("      provider: google  model: gemini-2.5-flash-image  key: GEMINI_API_KEY")
+    print("      provider: xai     model: grok-2-image            key: XAI_API_KEY  (Grok chi co o day)")
 
 
 def check_config(problems):

@@ -104,14 +104,25 @@ Nếu preflight báo thiếu API key, tự chạy trong terminal:
 hermes config set OPENROUTER_API_KEY sk-or-v1-xxxxxxxx
 ```
 
-Và thêm vào `$HERMES_HOME/config.yaml`:
+Và thêm khối `image_gen` vào `$HERMES_HOME/config.yaml` — chọn **một** provider,
+đổi `provider` + `model` theo bảng:
 
 ```yaml
 image_gen:
-  provider: openrouter
-  use_gateway: false
+  provider: openrouter               # openrouter | openai | google | xai
+  use_gateway: false                 # chỉ cần cho openrouter; bỏ với provider khác
   model: google/gemini-3-pro-image
 ```
+
+| provider | model ví dụ | key |
+| --- | --- | --- |
+| `openrouter` | `google/gemini-3-pro-image`, `openai/gpt-5-image` | `OPENROUTER_API_KEY` |
+| `openai` | `gpt-image-1` | `OPENAI_API_KEY` |
+| `google` | `gemini-2.5-flash-image` | `GEMINI_API_KEY` |
+| `xai` | `grok-2-image` | `XAI_API_KEY` |
+
+> Grok image không có trên OpenRouter — muốn dùng Grok phải đi provider `xai`
+> trực tiếp.
 
 ---
 

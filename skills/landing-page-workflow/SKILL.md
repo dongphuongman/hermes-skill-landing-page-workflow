@@ -83,16 +83,30 @@ hermes tools list | grep image_gen
 hermes tools enable image_gen
 ```
 
-Nếu chưa cấu hình provider, thêm vào `$HERMES_HOME/config.yaml`:
+Nếu chưa cấu hình provider, thêm khối `image_gen` vào `$HERMES_HOME/config.yaml`.
+Chọn **một** provider — đổi `provider` + `model` theo bảng bên dưới:
 
 ```yaml
 image_gen:
-  provider: openrouter
-  use_gateway: false
+  provider: openrouter               # openrouter | openai | google | xai
+  use_gateway: false                 # chỉ cần cho openrouter; bỏ với provider khác
   model: google/gemini-3-pro-image
 ```
 
-và đặt key: `hermes config set OPENROUTER_API_KEY sk-or-v1-...`
+| provider | model ví dụ | key đặt qua `hermes config set` |
+| --- | --- | --- |
+| `openrouter` | `google/gemini-3-pro-image`, `openai/gpt-5-image`, `google/gemini-2.5-flash-image` | `OPENROUTER_API_KEY` |
+| `openai` | `gpt-image-1` | `OPENAI_API_KEY` |
+| `google` | `gemini-2.5-flash-image` | `GEMINI_API_KEY` |
+| `xai` | `grok-2-image` | `XAI_API_KEY` |
+
+```bash
+hermes config set OPENROUTER_API_KEY sk-or-v1-...   # đổi tên key theo provider đã chọn
+```
+
+> **Grok image không có trên OpenRouter** — muốn dùng Grok phải đi provider `xai`
+> trực tiếp. Gemini và GPT image thì có sẵn trên OpenRouter, chỉ cần đổi `model`.
+> OpenRouter tiện nhất vì một key phủ được cả Gemini lẫn GPT image.
 
 > **Cảnh báo chi phí.** Khác với LLM, hầu hết mô hình sinh ảnh **không có gói
 > miễn phí** và tính tiền theo từng lượt. Một trang landing với ảnh riêng cho
