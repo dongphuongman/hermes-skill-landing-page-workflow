@@ -1,0 +1,41 @@
+name: selftest
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'   # macOS system python3 la 3.9.6 — giu tuong thich
+
+      - name: Selftest
+        run: python3 skills/landing-page-workflow/scripts/selftest
+
+      - name: Kiem tra frontmatter
+        run: |
+          python3 -c "
+          import re, pathlib
+          t = pathlib.Path('skills/landing-page-workflow/SKILL.md').read_text(encoding='utf-8')
+          assert t.startswith('---'), 'frontmatter phai bat dau tai byte 0'
+          m = re.search(r'\n---\s*\n', t[3:])
+          assert m, 'frontmatter chua dong'
+          fm = t[3:m.start()+3]
+          assert 'name:' in fm and 'description:' in fm, 'thieu name/description'
+          print('frontmatter OK')
+          "
+
+      - name: Installer idempotent
+        run: |
+          chmod +x install.sh
+          mkdir -p /tmp/hh
+          HERMES_HOME=/tmp/hh ./install.sh
+          HERMES_HOME=/tmp/hh ./install.sh
+          test -f /tmp/hh/skills/landing-page-workflow/SKILL.md
+          test -f /tmp/hh/skills/landing-page-workflow/scripts/preflight

@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+"""selftest — kiem thu cac script tren fixture xac dinh.
+
+Khong goi mang, khong can Hermes CLI, khong can npm. Moi test dung fixture
+tao trong thu muc tam nen ket qua on dinh va chay duoc trong CI.
+
+Exit: 0 = moi test pass hoac skip, 1 = co test fail.
+"""
+
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+PY = sys.executable or "python3"
+
+passed = failed = skipped = 0
+
+
+def report(name, ok, detail=""):
+    global passed, failed
+    if ok:
+        passed += 1
+        print("  [PASS] %s" % name)
+    else:
+        failed += 1
+        print("  [FAIL] %s%s" % (name, (" — " + detail) if detail else ""))
+
+
+def skip(name, why):
+    global skipped
+    skipped += 1
+    print("  [SKIP] %s — %s" % (name, why))
+
+
+def run_script(script, *args, **kw):
+    cmd = [PY, os.path.join(HERE, script)] + list(args)
+    p = subprocess.run(cmd, capture_output=True, text=True,
+                       cwd=kw.get("cwd"), env=kw.get("env"), timeout=120)
+    return p.returncode, p.stdout + p.stderr
+
+
+def git(cwd, *args):
+    subprocess.run(["git"] + list(args), cwd=cwd, capture_output=True, text=True)
+
+
+def make_repo(path):
+    os.makedirs(path, exist_ok=True)
+    git(path, "init", "-q")
+    git(path, "config", "user.email", "t@example.com")
+    git(path, "config", "user.name", "t")
+    with open(os.path.join(path, "a.txt"), "w") as f:
+        f.write("v1\n")
+    git(path, "add", ".")
+    git(path, "commit", "-q", "-m", "init")
+
+
+# --------------------------------------------------------------------------
+print("landing-page-workflow selftest\n")
+
+print("checkpoint")
+if not shutil.which("git"):
+    skip("moi test checkpoint", "khong co git")
+else:
+    with tempfile.TemporaryDirectory() as td:
+        # guard: repo sach -> 0
+        repo = os.path.join(td, "clean")
+        make_repo(repo)
+        rc, out = run_script("checkpoint", "guard", cwd=repo)
+        report("guard pass tren tree sach", rc == 0, "rc=%d" % rc)
+
+        # guard: repo ban -> 1
+        with open(os.path.join(repo, "a.txt"), "w") as f:
+            f.write("v2\n")
+        rc, out = run_script("checkpoint", "guard", cwd=repo)
+        report("guard chan tree ban", rc == 1 and "BAN" in out, "rc=%d" % rc)
+
+        # guard: khong phai repo git -> 1
+        plain = os.path.join(td, "plain")
+        os.makedirs(plain)
+        rc, out = run_script("checkpoint", "guard", cwd=plain)
+        report("guard chan thu muc khong phai git", rc == 1, "rc=%d" % rc)
+
+        # commit roi guard lai -> sach
+        rc, _ = run_script("checkpoint", "commit", "Test: doi a.txt", cwd=repo)
+        rc2, _ = run_script("checkpoint", "guard", cwd=repo)
+        report("commit lam sach tree", rc == 0 and rc2 == 0, "rc=%d rc2=%d" % (rc, rc2))
+
+        # rollback PHAI stash truoc, ke ca file untracked
+        with open(os.path.join(repo, "a.txt"), "w") as f:
+            f.write("hong\n")
+        with open(os.path.join(repo, "moi.txt"), "w") as f:
+            f.write("file untracked do agent tao\n")
+        rc, out = run_script("checkpoint", "rollback", cwd=repo)
+        with open(os.path.join(repo, "a.txt")) as f:
+            restored = f.read().strip() == "v2"
+        p = subprocess.run(["git", "stash", "list"], cwd=repo,
+                           capture_output=True, text=True)
+        stashed = "truoc-rollback" in p.stdout
+        report("rollback khoi phuc file tracked", rc == 0 and restored, "rc=%d" % rc)
+        report("rollback stash truoc khi reset", stashed, "stash list rong")
+
+        # stash pop phai lay lai duoc CA file untracked
+        subprocess.run(["git", "stash", "pop"], cwd=repo, capture_output=True, text=True)
+        report("stash -u giu duoc file untracked",
+               os.path.exists(os.path.join(repo, "moi.txt")))
+
+print("\nverify-build")
+with tempfile.TemporaryDirectory() as td:
+    # dist co tham chieu hong -> 1
+    proj = os.path.join(td, "broken")
+    dist = os.path.join(proj, "dist", "assets")
+    os.makedirs(dist)
+    with open(os.path.join(proj, "package.json"), "w") as f:
+        f.write('{"name":"t","version":"1.0.0"}')
+    with open(os.path.join(proj, "dist", "index.html"), "w") as f:
+        f.write('<img src="/assets/hero.png"><img src="/assets/thieu.png">')
+    with open(os.path.join(dist, "hero.png"), "wb") as f:
+        f.write(b"\x89PNG")
+    rc, out = run_script("verify-build", proj, "--no-build")
+    report("bat duoc tham chieu anh hong", rc == 1 and "thieu.png" in out, "rc=%d" % rc)
+    report("khong bao nham anh ton tai", "✗ /assets/hero.png" not in out)
+
+    # dist sach -> 0
+    proj2 = os.path.join(td, "clean")
+    d2 = os.path.join(proj2, "dist", "assets")
+    os.makedirs(d2)
+    with open(os.path.join(proj2, "package.json"), "w") as f:
+        f.write('{"name":"t","version":"1.0.0"}')
+    with open(os.path.join(proj2, "dist", "index.html"), "w") as f:
+        f.write('<img src="/assets/ok.png">'
+                '<img src="https://cdn.example.com/x.png">'
+                '<img src="data:image/png;base64,AAAA">')
+    with open(os.path.join(d2, "ok.png"), "wb") as f:
+        f.write(b"\x89PNG")
+    rc, out = run_script("verify-build", proj2, "--no-build")
+    report("pass tren dist sach", rc == 0, "rc=%d" % rc)
+    report("bo qua URL ngoai va data:", "cdn.example.com" not in out)
+
+    # query string + duong dan tuong doi
+    proj3 = os.path.join(td, "query")
+    d3 = os.path.join(proj3, "dist", "assets")
+    os.makedirs(d3)
+    with open(os.path.join(proj3, "package.json"), "w") as f:
+        f.write('{"name":"t","version":"1.0.0"}')
+    with open(os.path.join(proj3, "dist", "index.html"), "w") as f:
+        f.write('<img src="/assets/v.png?v=123"><link href="./assets/s.css">')
+    with open(os.path.join(d3, "v.png"), "wb") as f:
+        f.write(b"\x89PNG")
+    with open(os.path.join(d3, "s.css"), "w") as f:
+        f.write("body{}")
+    rc, out = run_script("verify-build", proj3, "--no-build")
+    report("xu ly dung query string va duong dan tuong doi", rc == 0, "rc=%d" % rc)
+
+    # srcset: mot URL ton tai, mot URL hong -> 1
+    proj4 = os.path.join(td, "srcset")
+    d4 = os.path.join(proj4, "dist", "assets")
+    os.makedirs(d4)
+    with open(os.path.join(proj4, "package.json"), "w") as f:
+        f.write('{"name":"t","version":"1.0.0"}')
+    with open(os.path.join(proj4, "dist", "index.html"), "w") as f:
+        f.write('<img srcset="/assets/a.png 1x, /assets/thieu2x.png 2x">')
+    with open(os.path.join(d4, "a.png"), "wb") as f:
+        f.write(b"\x89PNG")
+    rc, out = run_script("verify-build", proj4, "--no-build")
+    report("bat duoc anh hong trong srcset", rc == 1 and "thieu2x.png" in out, "rc=%d" % rc)
+
+    # thieu package.json -> 2
+    rc, out = run_script("verify-build", td, "--no-build")
+    report("bao loi khi thieu package.json", rc == 2, "rc=%d" % rc)
+
+print("\npreflight")
+env = dict(os.environ, SKIP_HERMES="1")
+rc, out = run_script("preflight", env=env)
+report("chay duoc voi SKIP_HERMES=1", rc in (0, 1), "rc=%d" % rc)
+report("co kiem tra node/npm/git", "node" in out and "git" in out)
+
+with tempfile.TemporaryDirectory() as td:
+    # config.yaml thieu khoi image_gen phai bi bao thieu
+    with open(os.path.join(td, "config.yaml"), "w") as f:
+        f.write("model:\n  name: hermes-4\n")
+    env2 = dict(os.environ, HERMES_HOME=td)
+    env2.pop("SKIP_HERMES", None)
+    rc, out = run_script("preflight", env=env2)
+    report("phat hien thieu khoi image_gen", "image_gen" in out and rc == 1, "rc=%d" % rc)
+
+    # config.yaml day du phai duoc chap nhan
+    with open(os.path.join(td, "config.yaml"), "w") as f:
+        f.write("image_gen:\n  provider: openrouter\n  use_gateway: false\n"
+                "  model: google/gemini-3-pro-image\n")
+    rc, out = run_script("preflight", env=env2)
+    report("chap nhan khoi image_gen hop le",
+           "provider: openrouter" in out and "google/gemini-3-pro-image" in out)
+
+print("\n%d passed, %d skipped, %d failed" % (passed, skipped, failed))
+sys.exit(1 if failed else 0)

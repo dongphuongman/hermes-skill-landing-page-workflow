@@ -1,0 +1,216 @@
+#!/usr/bin/env python3
+"""preflight — kiem tra moi truong truoc khi dung landing page bang Hermes Agent.
+
+Kiem tra, theo thu tu:
+  1. node / npm / git co tren PATH, node du moi.
+  2. Hermes CLI goi duoc.
+  3. Cong cu image_gen da bat (hermes tools list).
+  4. Khoi image_gen co trong config.yaml (provider + model).
+  5. 4 skill thiet ke da cai (hermes skills list).
+
+Ly do ton tai: thieu image_gen thi agent van dung xong trang nhung toan
+placeholder vo — phat hien ra sau khi da viet het component thi da muon.
+
+Exit codes: 0 = san sang, 1 = thieu thu gi do, 2 = loi noi bo.
+
+Bien moi truong:
+  HERMES_HOME   mac dinh ~/.hermes (Docker: /opt/data)
+  SKIP_HERMES=1 bo qua cac kiem tra can Hermes CLI (dung cho CI)
+"""
+
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+MIN_NODE_MAJOR = 18
+
+REQUIRED_SKILLS = [
+    ("image-to-code", "Leonxlnx/taste-skill/skills/image-to-code-skill --name image-to-code"),
+    ("design-taste-frontend", "Leonxlnx/taste-skill/skills/taste-skill --name taste"),
+    ("imagegen-frontend-web", "Leonxlnx/taste-skill/skills/imagegen-frontend-web --name imagegen-frontend-web"),
+    ("imagegen-frontend-mobile", "Leonxlnx/taste-skill/skills/imagegen-frontend-mobile --name imagegen-frontend-mobile"),
+]
+
+OK, BAD, WARN = "  [OK]", "  [--]", "  [~ ]"
+
+
+def hermes_home():
+    h = os.environ.get("HERMES_HOME")
+    if h:
+        return h
+    # Ban Docker chinh thuc dung /opt/data chu khong phai ~/.hermes.
+    if os.path.isdir("/opt/data") and os.path.exists("/opt/data/config.yaml"):
+        return "/opt/data"
+    return os.path.expanduser("~/.hermes")
+
+
+def run(cmd, timeout=20):
+    """Chay lenh, tra (rc, output). Khong bao gio nem exception."""
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return p.returncode, (p.stdout or "") + (p.stderr or "")
+    except (OSError, subprocess.SubprocessError):
+        return 127, ""
+
+
+def check_binaries(problems):
+    print("Cong cu co ban")
+    for name in ("node", "npm", "git"):
+        if shutil.which(name):
+            rc, out = run([name, "--version"])
+            print("%s %s %s" % (OK, name, out.strip().splitlines()[0] if out.strip() else ""))
+        else:
+            print("%s %s khong tim thay tren PATH" % (BAD, name))
+            problems.append("cai %s" % name)
+
+    if shutil.which("node"):
+        rc, out = run(["node", "--version"])
+        m = re.search(r"v(\d+)", out)
+        if m and int(m.group(1)) < MIN_NODE_MAJOR:
+            print("%s node v%s qua cu (can >= %d)" % (BAD, m.group(1), MIN_NODE_MAJOR))
+            problems.append("nang cap node len >= %d" % MIN_NODE_MAJOR)
+
+
+def check_hermes(problems):
+    print("Hermes CLI")
+    if not shutil.which("hermes"):
+        print("%s hermes khong tim thay tren PATH — bo qua cac kiem tra phu thuoc CLI" % WARN)
+        problems.append("cai Hermes CLI hoac them vao PATH")
+        return False
+    print("%s hermes co tren PATH" % OK)
+    return True
+
+
+def check_image_gen(problems):
+    print("Cong cu image_gen")
+    rc, out = run(["hermes", "tools", "list"])
+    if rc != 0:
+        print("%s khong chay duoc 'hermes tools list' — bo qua" % WARN)
+        return
+    line = next((l for l in out.splitlines() if "image_gen" in l), None)
+    if line is None:
+        print("%s khong thay image_gen trong danh sach tool" % BAD)
+        problems.append("hermes tools enable image_gen")
+        return
+    if re.search(r"enabled|\bon\b|✓|true", line, re.I):
+        print("%s image_gen da bat" % OK)
+    else:
+        print("%s image_gen co nhung chua bat: %s" % (BAD, line.strip()[:80]))
+        problems.append("hermes tools enable image_gen")
+
+
+# Khoi config mau in ra khi thieu/khong du — de nguoi dung dan thang, sua trong
+# 10 giay thay vi tu mo mam. Model o day chi la vi du hop le tren OpenRouter;
+# doi sang model anh khac neu muon.
+CONFIG_SAMPLE = (
+    "image_gen:\n"
+    "  provider: openrouter\n"
+    "  use_gateway: false\n"
+    "  model: google/gemini-3-pro-image"
+)
+
+
+def print_config_sample(cfg):
+    print("\n  → Them khoi nay vao %s:" % cfg)
+    for line in CONFIG_SAMPLE.splitlines():
+        print("      %s" % line)
+    print("  → Roi dat API key — TU chay trong terminal, DUNG dan vao chat agent")
+    print("    (key se nam lai trong transcript/state.db va bi FTS index):")
+    print("      hermes config set OPENROUTER_API_KEY sk-or-v1-...")
+
+
+def check_config(problems):
+    cfg = os.path.join(hermes_home(), "config.yaml")
+    print("Cau hinh (%s)" % cfg)
+    if not os.path.exists(cfg):
+        print("%s khong tim thay config.yaml" % BAD)
+        problems.append("tao config.yaml va them khoi image_gen")
+        print_config_sample(cfg)
+        return
+    try:
+        with open(cfg, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except OSError as e:
+        print("%s khong doc duoc: %s" % (BAD, e))
+        problems.append("kiem tra quyen doc config.yaml")
+        return
+
+    # Khong dung thu vien YAML: giu script stdlib-only. Chi can biet khoi
+    # image_gen ton tai va co provider + model.
+    block = re.search(r"^image_gen:\s*$((?:\n[ \t]+.*|\n\s*)*)", text, re.M)
+    if not block:
+        print("%s chua co khoi image_gen trong config.yaml" % BAD)
+        problems.append("them khoi image_gen (provider + model) vao config.yaml")
+        print_config_sample(cfg)
+        return
+    body = block.group(1)
+    prov = re.search(r"^\s+provider:\s*(\S+)", body, re.M)
+    model = re.search(r"^\s+model:\s*(\S+)", body, re.M)
+    if prov:
+        print("%s provider: %s" % (OK, prov.group(1)))
+    else:
+        print("%s khoi image_gen thieu 'provider'" % BAD)
+        problems.append("them provider vao khoi image_gen")
+    if model:
+        print("%s model: %s" % (OK, model.group(1)))
+    else:
+        print("%s khoi image_gen thieu 'model'" % BAD)
+        problems.append("them model vao khoi image_gen")
+    if not prov or not model:
+        print_config_sample(cfg)
+
+
+def check_skills(problems):
+    print("Skill thiet ke")
+    rc, out = run(["hermes", "skills", "list"], timeout=30)
+    if rc != 0:
+        print("%s khong chay duoc 'hermes skills list' — bo qua" % WARN)
+        return
+    for name, install_arg in REQUIRED_SKILLS:
+        if re.search(r"\b%s\b" % re.escape(name), out):
+            print("%s %s" % (OK, name))
+        else:
+            print("%s %s chua cai" % (BAD, name))
+            problems.append("hermes skills install %s" % install_arg)
+
+
+def main():
+    print("preflight — landing-page-workflow\n")
+    problems = []
+
+    check_binaries(problems)
+    print()
+
+    skip = os.environ.get("SKIP_HERMES", "").strip() in ("1", "true", "yes")
+    if skip:
+        print("Hermes CLI\n%s SKIP_HERMES=1 — bo qua kiem tra Hermes\n" % WARN)
+    else:
+        has_cli = check_hermes(problems)
+        print()
+        if has_cli:
+            check_image_gen(problems)
+            print()
+            check_skills(problems)
+            print()
+        check_config(problems)
+        print()
+
+    if problems:
+        print("KET QUA: CHUA SAN SANG — %d viec can lam:" % len(problems))
+        for i, p in enumerate(problems, 1):
+            print("  %d. %s" % (i, p))
+        print("\nNhac lai ve chi phi: mo hinh sinh anh tinh tien theo luot va")
+        print("thuong khong co goi mien phi. Dat budget tren provider truoc khi chay.")
+        return 1
+
+    print("KET QUA: SAN SANG — co the sang buoc scaffold du an.")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(2)

@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""verify-build — build du an roi do tham chieu tai nguyen hong trong dist/.
+
+Ly do ton tai: anh 404 la loi pho bien nhat khi agent dung landing page, va
+no THUONG KHONG hien ra o dev server. Vite phuc vu file tu public/ va src/
+theo duong dan khac han ban build, nen mot tham chieu sai van chay ngon o
+`npm run dev` roi vo o production.
+
+Quy trinh:
+  1. npm run build (bo qua bang --no-build neu da build san)
+  2. Quet dist/**/*.{html,css,js} tim tham chieu tai nguyen cuc bo
+  3. Doi chieu voi file thuc te trong dist/
+  4. Bao cao tham chieu tro toi file khong ton tai
+
+Usage:
+    verify-build [duong-dan-du-an] [--no-build]
+
+Exit codes: 0 = build ok va khong co tham chieu hong,
+            1 = build that bai hoac co tham chieu hong,
+            2 = loi noi bo / sai cach dung.
+"""
+
+import os
+import re
+import subprocess
+import sys
+import urllib.parse
+
+ASSET_EXT = (
+    ".png", ".jpg", ".jpeg", ".webp", ".avif", ".gif", ".svg", ".ico",
+    ".woff", ".woff2", ".ttf", ".otf", ".mp4", ".webm", ".css", ".js",
+)
+
+SCAN_EXT = (".html", ".css", ".js")
+
+# src="...", href="...", url(...), va chuoi js tro toi /assets/...
+PATTERNS = [
+    re.compile(r"""(?:src|href)\s*=\s*["']([^"']+)["']"""),
+    re.compile(r"""url\(\s*["']?([^"')]+)["']?\s*\)"""),
+    re.compile(r"""["'](/assets/[^"']+)["']"""),
+]
+
+# srcset="a.png 1x, b.png 2x, c.png 480w" — moi anh responsive la mot tham chieu
+# rieng; regex src/href o tren khong bat srcset nen phai tach rieng.
+SRCSET_PATTERN = re.compile(r"""srcset\s*=\s*["']([^"']+)["']""")
+
+
+def iter_srcset_refs(text):
+    """Tach tung URL trong moi thuoc tinh srcset (bo phan mo ta 1x/2x/480w)."""
+    for m in SRCSET_PATTERN.finditer(text):
+        for candidate in m.group(1).split(","):
+            url = candidate.strip().split()[0] if candidate.strip() else ""
+            if url:
+                yield url
+
+
+def is_external(ref):
+    r = ref.strip()
+    return (
+        not r
+        or r.startswith(("http://", "https://", "//", "data:", "blob:", "#", "mailto:", "tel:"))
+    )
+
+
+def collect_refs(dist):
+    """Tra dict {ref_da_chuan_hoa: [file_chua_no, ...]}."""
+    refs = {}
+    for root, _dirs, files in os.walk(dist):
+        for fn in files:
+            if not fn.lower().endswith(SCAN_EXT):
+                continue
+            full = os.path.join(root, fn)
+            try:
+                with open(full, encoding="utf-8", errors="replace") as f:
+                    text = f.read()
+            except OSError:
+                continue
+            raw_refs = [m.group(1).strip()
+                        for pat in PATTERNS for m in pat.finditer(text)]
+            raw_refs.extend(iter_srcset_refs(text))
+            for ref in raw_refs:
+                if is_external(ref):
+                    continue
+                # bo query string va fragment
+                ref = ref.split("?", 1)[0].split("#", 1)[0]
+                if not ref or not ref.lower().endswith(ASSET_EXT):
+                    continue
+                refs.setdefault(ref, []).append(os.path.relpath(full, dist))
+    return refs
+
+
+def resolve(dist, ref, from_file):
+    """Doi chieu mot tham chieu voi cay thu muc dist. Tra duong dan hoac None."""
+    ref = urllib.parse.unquote(ref)
+    if ref.startswith("/"):
+        cand = os.path.join(dist, ref.lstrip("/"))
+    else:
+        cand = os.path.join(dist, os.path.dirname(from_file), ref)
+    cand = os.path.normpath(cand)
+    return cand if os.path.exists(cand) else None
+
+
+def npm_build(project):
+    print("→ npm run build")
+    try:
+        p = subprocess.run(
+            ["npm", "run", "build"], cwd=project, text=True,
+            capture_output=True, timeout=600,
+        )
+    except FileNotFoundError:
+        print("verify-build: khong tim thay npm tren PATH.")
+        return 2
+    except subprocess.TimeoutExpired:
+        print("verify-build: build qua 10 phut — huy.")
+        return 1
+    if p.returncode != 0:
+        print("verify-build: BUILD THAT BAI\n")
+        tail = (p.stdout + p.stderr).strip().splitlines()
+        for line in tail[-40:]:
+            print("   %s" % line)
+        return 1
+    print("  build xong")
+    return 0
+
+
+def main(argv):
+    args = [a for a in argv if not a.startswith("--")]
+    flags = {a for a in argv if a.startswith("--")}
+    project = os.path.abspath(args[0]) if args else os.getcwd()
+
+    if not os.path.isdir(project):
+        print("verify-build: khong thay thu muc %s" % project)
+        return 2
+    if not os.path.exists(os.path.join(project, "package.json")):
+        print("verify-build: khong thay package.json trong %s" % project)
+        return 2
+
+    print("verify-build: %s\n" % project)
+
+    if "--no-build" not in flags:
+        rc = npm_build(project)
+        if rc != 0:
+            return rc
+    else:
+        print("→ bo qua build (--no-build)")
+
+    dist = os.path.join(project, "dist")
+    if not os.path.isdir(dist):
+        print("verify-build: khong thay thu muc dist/ sau khi build.")
+        return 1
+
+    print("\n→ do tham chieu tai nguyen trong dist/")
+    refs = collect_refs(dist)
+    if not refs:
+        print("  khong tim thay tham chieu tai nguyen cuc bo nao")
+        print("\nKET QUA: PASS")
+        return 0
+
+    broken = []
+    for ref, sources in sorted(refs.items()):
+        if not any(resolve(dist, ref, src) for src in sources):
+            broken.append((ref, sources))
+
+    print("  da kiem tra %d tham chieu" % len(refs))
+
+    if broken:
+        print("\nKET QUA: FAIL — %d tham chieu tro toi file khong ton tai:" % len(broken))
+        for ref, sources in broken:
+            print("   ✗ %s" % ref)
+            for s in sorted(set(sources))[:3]:
+                print("       duoc tham chieu tu %s" % s)
+        print("\nThuong do agent ghi sai duong dan tuong doi, hoac tien trinh")
+        print("sinh anh that bai giua chung. Kiem tra lai buoc sinh anh, hoac")
+        print("tam thay bang anh placeholder roi sinh lai.")
+        return 1
+
+    print("\nKET QUA: PASS — moi tham chieu tai nguyen deu phan giai duoc.")
+    print("Xem truoc ban build:  npm run preview   (KHONG mo dist/index.html bang file://)")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except KeyboardInterrupt:
+        sys.exit(2)
