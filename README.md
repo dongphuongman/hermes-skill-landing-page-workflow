@@ -29,7 +29,7 @@ sau khi đã viết xong toàn bộ component.
 ## Cài
 
 ```bash
-git clone https://github.com/manphuongdong/hermes-skill-landing-page-workflow.git
+git clone https://github.com/dongphuongman/hermes-skill-landing-page-workflow.git
 cd hermes-skill-landing-page-workflow
 chmod +x install.sh
 ./install.sh                        # hoặc HERMES_HOME=/opt/data ./install.sh
@@ -87,13 +87,6 @@ python3 "$SKILL/scripts/verify-build"               # 4. build + dò ảnh 404
 ```bash
 python3 skills/landing-page-workflow/scripts/selftest
 ```
-
-## Ghi nhận
-
-Quy trình trong skill này được rút ra từ giáo trình **"#6 — Dựng Landing Page
-bằng Hermes Agent"** của Mentor **Đỗ Hoàng Hà** (AI Guru x TiniX). Skill đóng
-gói phần quy trình của tài liệu thành thứ agent tự áp dụng được. Bộ skill thiết
-kế là của [Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill).
 
 ## License
 

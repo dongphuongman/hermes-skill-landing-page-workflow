@@ -46,9 +46,9 @@ Làm tuần tự, dừng lại và báo tôi nếu bất kỳ bước nào khôn
    nhận thư mục tồn tại.
 
 2. Cài skill quy trình:
-   hermes skills install manphuongdong/hermes-skill-landing-page-workflow/landing-page-workflow --name landing-page-workflow -y
+   hermes skills install dongphuongman/hermes-skill-landing-page-workflow/landing-page-workflow --name landing-page-workflow -y
    Nếu lệnh này thất bại, clone repo rồi chạy installer:
-     git clone --depth 1 https://github.com/manphuongdong/hermes-skill-landing-page-workflow.git /tmp/lpw
+     git clone --depth 1 https://github.com/dongphuongman/hermes-skill-landing-page-workflow.git /tmp/lpw
      cd /tmp/lpw && chmod +x install.sh && HERMES_HOME=<đường dẫn bước 1> ./install.sh
    Nếu không ra được mạng, DỪNG LẠI và báo tôi — đừng tự tạo file thay thế.
 
@@ -160,7 +160,7 @@ chạy một mạch từ scaffold tới trang hoàn chỉnh rồi bạn mới ph
 
 ```text
 Cập nhật skill landing-page-workflow lên bản mới nhất: clone lại repo
-manphuongdong/hermes-skill-landing-page-workflow vào thư mục tạm, chạy ./install.sh
+dongphuongman/hermes-skill-landing-page-workflow vào thư mục tạm, chạy ./install.sh
 với HERMES_HOME đúng của máy này, chạy selftest xác nhận 18 passed, rồi dọn
 thư mục tạm. Đừng đụng tới 4 skill thiết kế và đừng sửa config.yaml.
 ```
