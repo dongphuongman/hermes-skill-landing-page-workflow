@@ -22,7 +22,7 @@ sau khi đã viết xong toàn bộ component.
 | `scripts/preflight` | Kiểm tra node/npm/git, `image_gen` đã bật, khối config, 4 skill đã cài |
 | `scripts/checkpoint` | `guard` / `status` / `save` / `commit` / `rollback` / `restore` trên Git |
 | `scripts/verify-build` | Build rồi dò tham chiếu ảnh hỏng trong `dist/` |
-| `scripts/selftest` | 18 test trên fixture, không cần mạng |
+| `scripts/selftest` | 19 test trên fixture, không cần mạng |
 | `references/feedback-prompts.md` | Mẫu feedback theo từng loại lỗi bố cục |
 | `references/troubleshooting.md` | Lỗi thường gặp và cách xử lý |
 

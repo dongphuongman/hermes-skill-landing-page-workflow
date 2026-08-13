@@ -76,7 +76,7 @@ Làm tuần tự, dừng lại và báo tôi nếu bất kỳ bước nào khôn
 
 7. Chạy selftest của skill:
    python3 $HERMES_HOME/skills/landing-page-workflow/scripts/selftest
-   Kỳ vọng 18 passed, 0 failed.
+   Kỳ vọng 19 passed, 0 failed.
 
 8. Chạy preflight:
    python3 $HERMES_HOME/skills/landing-page-workflow/scripts/preflight
@@ -172,7 +172,7 @@ chạy một mạch từ scaffold tới trang hoàn chỉnh rồi bạn mới ph
 ```text
 Cập nhật skill landing-page-workflow lên bản mới nhất: clone lại repo
 dongphuongman/hermes-skill-landing-page-workflow vào thư mục tạm, chạy ./install.sh
-với HERMES_HOME đúng của máy này, chạy selftest xác nhận 18 passed, rồi dọn
+với HERMES_HOME đúng của máy này, chạy selftest xác nhận 19 passed, rồi dọn
 thư mục tạm. Đừng đụng tới 4 skill thiết kế và đừng sửa config.yaml.
 ```
 

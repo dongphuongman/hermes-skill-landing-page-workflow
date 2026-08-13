@@ -194,5 +194,12 @@ with tempfile.TemporaryDirectory() as td:
     report("chap nhan khoi image_gen hop le",
            "provider: openrouter" in out and "google/gemini-3-pro-image" in out)
 
+    # dang flow (image_gen: { ... }) cung phai duoc chap nhan
+    with open(os.path.join(td, "config.yaml"), "w") as f:
+        f.write("image_gen: { provider: xai, model: grok-2-image }\n")
+    rc, out = run_script("preflight", env=env2)
+    report("chap nhan flow-form image_gen",
+           "provider: xai" in out and "grok-2-image" in out)
+
 print("\n%d passed, %d skipped, %d failed" % (passed, skipped, failed))
 sys.exit(1 if failed else 0)

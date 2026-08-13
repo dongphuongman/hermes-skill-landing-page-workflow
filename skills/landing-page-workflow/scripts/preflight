@@ -141,17 +141,23 @@ def check_config(problems):
         problems.append("kiem tra quyen doc config.yaml")
         return
 
-    # Khong dung thu vien YAML: giu script stdlib-only. Chi can biet khoi
-    # image_gen ton tai va co provider + model.
+    # Khong dung thu vien YAML: giu script stdlib-only. Ho tro ca hai dang:
+    #   block:  image_gen:\n    provider: ...\n    model: ...
+    #   flow:   image_gen: { provider: ..., model: ... }
+    flow = re.search(r"^image_gen:[ \t]*\{(.+?)\}[ \t]*$", text, re.M)
     block = re.search(r"^image_gen:\s*$((?:\n[ \t]+.*|\n\s*)*)", text, re.M)
-    if not block:
+    if flow:
+        body = flow.group(1)
+    elif block:
+        body = block.group(1)
+    else:
         print("%s chua co khoi image_gen trong config.yaml" % BAD)
         problems.append("them khoi image_gen (provider + model) vao config.yaml")
         print_config_sample(cfg)
         return
-    body = block.group(1)
-    prov = re.search(r"^\s+provider:\s*(\S+)", body, re.M)
-    model = re.search(r"^\s+model:\s*(\S+)", body, re.M)
+    # Khong neo ^\s+ de mot regex dung cho ca block lan flow.
+    prov = re.search(r"provider:\s*([^\s,}]+)", body)
+    model = re.search(r"model:\s*([^\s,}]+)", body)
     if prov:
         print("%s provider: %s" % (OK, prov.group(1)))
     else:
